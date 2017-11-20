@@ -1,0 +1,1624 @@
+From 308015329f1983cad2d5f63d1bc26316564c5f45 Mon Sep 17 00:00:00 2001
+From: "Yue, Liang" <liang.yue@cienet.com.cn>
+Date: Mon, 20 Nov 2017 09:58:52 +0800
+Subject: [PATCH] Framework support to dual eth
+
+eth0 is DHCP by default
+eth1 is STATIC by default
+---
+ frameworks/base/api/current.txt                    |  22 +--
+ frameworks/base/api/system-current.txt             |  22 +--
+ .../base/core/java/android/app/ContextImpl.java    |   2 +-
+ .../java/android/app/SystemServiceRegistry.java    |   5 +-
+ .../core/java/android/net/EthernetManager.java     | 152 ---------------------
+ .../base/core/java/android/net/EthernetManager.org | 152 +++++++++++++++++++++
+ .../core/java/android/net/IEthernetManager.aidl    |  20 +--
+ .../java/android/net/ethernet/EthernetManager.java | 109 ++++++++-------
+ .../server/ethernet/EthernetConfigStore.java       |  25 +++-
+ .../server/ethernet/EthernetNetworkFactory.java    | 116 +++++++++-------
+ .../server/ethernet/EthernetServiceImpl.java       | 142 +++++++++++--------
+ packages/apps/Settings/Android.mk                  |  36 -----
+ packages/apps/Settings/Android.org                 |  36 +++++
+ 13 files changed, 452 insertions(+), 387 deletions(-)
+ delete mode 100755 frameworks/base/core/java/android/net/EthernetManager.java
+ create mode 100755 frameworks/base/core/java/android/net/EthernetManager.org
+ delete mode 100755 packages/apps/Settings/Android.mk
+ create mode 100755 packages/apps/Settings/Android.org
+
+diff --git a/frameworks/base/api/current.txt b/frameworks/base/api/current.txt
+index f11e63f..0eb8ab3 100755
+--- a/frameworks/base/api/current.txt
++++ b/frameworks/base/api/current.txt
+@@ -18743,25 +18743,24 @@ package android.net.ethernet {
+ 
+   public class EthernetManager {
+     method public int checkLink(java.lang.String);
+-    method public android.net.ethernet.EthernetDevInfo getDevInfo();
+-    method public android.net.DhcpInfo getDhcpInfo();
+-    method public java.lang.String getEthernetMode();
++    method public android.net.ethernet.EthernetDevInfo getDevInfo(java.lang.String);
++    method public android.net.DhcpInfo getDhcpInfo(java.lang.String);
++    method public java.lang.String getEthernetMode(java.lang.String);
+     method public int getEthernetState();
+     method public static synchronized android.net.ethernet.EthernetManager getInstance();
+     method public java.lang.String getInterfaceName();
+-    method public boolean getLinkState();
++    method public boolean getLinkState(java.lang.String);
+     method public android.net.ethernet.EthernetDevInfo getLoginInfo(java.lang.String);
+-    method public boolean getNetLinkStatus();
+     method public int getPppoeStatus();
+-    method public synchronized android.net.ethernet.EthernetDevInfo getStaticConfig();
++    method public synchronized android.net.ethernet.EthernetDevInfo getStaticConfig(java.lang.String);
+     method public boolean getWifiDisguiseState();
+-    method public boolean isAvailable();
+-    method public boolean isConfigured();
+-    method public boolean isDhcp();
++    method public boolean isAvailable(java.lang.String);
++    method public boolean isConfigured(java.lang.String);
++    method public boolean isDhcp(java.lang.String);
+     method public boolean isEthIfExist();
+     method public void setEthIfExist(boolean);
+-    method public void setEthernetEnabled(boolean);
+-    method public void setEthernetMode(java.lang.String, android.net.ethernet.EthernetDevInfo);
++    method public void setEthernetEnabled(java.lang.String, boolean);
++    method public void setEthernetMode(java.lang.String, java.lang.String, android.net.ethernet.EthernetDevInfo);
+     method public boolean setInterfaceName(java.lang.String);
+     method public void setWifiDisguise(boolean);
+     field public static final java.lang.String ETHERNET_CONNECT_MODE_DHCP = "dhcp";
+@@ -18806,6 +18805,7 @@ package android.net.ethernet {
+     field public static final int EVENT_STATIC_DISCONNECT_FAILED = 17; // 0x11
+     field public static final int EVENT_STATIC_DISCONNECT_SUCCESSED = 16; // 0x10
+     field public static final java.lang.String EXTRA_ETHERNET_INFO = "ethernetInfo";
++    field public static final java.lang.String EXTRA_ETHERNET_INTERFACE = "extra_ethernet_interface";
+     field public static final java.lang.String EXTRA_ETHERNET_STATE = "ethernet_state";
+     field public static final java.lang.String EXTRA_LINK_PROPERTIES = "linkProperties";
+     field public static final java.lang.String EXTRA_NETWORK_INFO = "networkInfo";
+diff --git a/frameworks/base/api/system-current.txt b/frameworks/base/api/system-current.txt
+index b961aef..fab24a5 100755
+--- a/frameworks/base/api/system-current.txt
++++ b/frameworks/base/api/system-current.txt
+@@ -20320,25 +20320,24 @@ package android.net.ethernet {
+ 
+   public class EthernetManager {
+     method public int checkLink(java.lang.String);
+-    method public android.net.ethernet.EthernetDevInfo getDevInfo();
+-    method public android.net.DhcpInfo getDhcpInfo();
+-    method public java.lang.String getEthernetMode();
++    method public android.net.ethernet.EthernetDevInfo getDevInfo(java.lang.String);
++    method public android.net.DhcpInfo getDhcpInfo(java.lang.String);
++    method public java.lang.String getEthernetMode(java.lang.String);
+     method public int getEthernetState();
+     method public static synchronized android.net.ethernet.EthernetManager getInstance();
+     method public java.lang.String getInterfaceName();
+-    method public boolean getLinkState();
++    method public boolean getLinkState(java.lang.String);
+     method public android.net.ethernet.EthernetDevInfo getLoginInfo(java.lang.String);
+-    method public boolean getNetLinkStatus();
+     method public int getPppoeStatus();
+-    method public synchronized android.net.ethernet.EthernetDevInfo getStaticConfig();
++    method public synchronized android.net.ethernet.EthernetDevInfo getStaticConfig(java.lang.String);
+     method public boolean getWifiDisguiseState();
+-    method public boolean isAvailable();
+-    method public boolean isConfigured();
+-    method public boolean isDhcp();
++    method public boolean isAvailable(java.lang.String);
++    method public boolean isConfigured(java.lang.String);
++    method public boolean isDhcp(java.lang.String);
+     method public boolean isEthIfExist();
+     method public void setEthIfExist(boolean);
+-    method public void setEthernetEnabled(boolean);
+-    method public void setEthernetMode(java.lang.String, android.net.ethernet.EthernetDevInfo);
++    method public void setEthernetEnabled(java.lang.String, boolean);
++    method public void setEthernetMode(java.lang.String, java.lang.String, android.net.ethernet.EthernetDevInfo);
+     method public boolean setInterfaceName(java.lang.String);
+     method public void setWifiDisguise(boolean);
+     field public static final java.lang.String ETHERNET_CONNECT_MODE_DHCP = "dhcp";
+@@ -20383,6 +20382,7 @@ package android.net.ethernet {
+     field public static final int EVENT_STATIC_DISCONNECT_FAILED = 17; // 0x11
+     field public static final int EVENT_STATIC_DISCONNECT_SUCCESSED = 16; // 0x10
+     field public static final java.lang.String EXTRA_ETHERNET_INFO = "ethernetInfo";
++    field public static final java.lang.String EXTRA_ETHERNET_INTERFACE = "extra_ethernet_interface";
+     field public static final java.lang.String EXTRA_ETHERNET_STATE = "ethernet_state";
+     field public static final java.lang.String EXTRA_LINK_PROPERTIES = "linkProperties";
+     field public static final java.lang.String EXTRA_NETWORK_INFO = "networkInfo";
+diff --git a/frameworks/base/core/java/android/app/ContextImpl.java b/frameworks/base/core/java/android/app/ContextImpl.java
+index b1ffe5c..6c29a4b 100755
+--- a/frameworks/base/core/java/android/app/ContextImpl.java
++++ b/frameworks/base/core/java/android/app/ContextImpl.java
+@@ -48,7 +48,7 @@ import android.graphics.Bitmap;
+ import android.graphics.drawable.Drawable;
+ 
+ /*add for gmac*/
+-import android.net.EthernetManager;
++import android.net.ethernet.EthernetManager;
+ import android.net.IEthernetManager;
+ 
+ import android.net.Uri;
+diff --git a/frameworks/base/core/java/android/app/SystemServiceRegistry.java b/frameworks/base/core/java/android/app/SystemServiceRegistry.java
+index 33d1da1..5aca729 100755
+--- a/frameworks/base/core/java/android/app/SystemServiceRegistry.java
++++ b/frameworks/base/core/java/android/app/SystemServiceRegistry.java
+@@ -64,7 +64,7 @@ import android.media.session.MediaSessionManager;
+ import android.media.tv.ITvInputManager;
+ import android.media.tv.TvInputManager;
+ import android.net.ConnectivityManager;
+-import android.net.EthernetManager;
++//import android.net.EthernetManager;// remove for gmac
+ import android.net.IConnectivityManager;
+ import android.net.IEthernetManager;
+ import android.net.INetworkPolicyManager;
+@@ -119,8 +119,7 @@ import android.view.textservice.TextServicesManager;
+ 
+ 
+ /*add for gmac*/
+-import android.net.EthernetManager;
+-import android.net.IEthernetManager;
++import android.net.ethernet.EthernetManager;
+ 
+ import java.util.HashMap;
+ 
+diff --git a/frameworks/base/core/java/android/net/EthernetManager.java b/frameworks/base/core/java/android/net/EthernetManager.java
+deleted file mode 100755
+index f45737a..0000000
+--- a/frameworks/base/core/java/android/net/EthernetManager.java
++++ /dev/null
+@@ -1,152 +0,0 @@
+-/*
+- * Copyright (C) 2014 The Android Open Source Project
+- *
+- * Licensed under the Apache License, Version 2.0 (the "License");
+- * you may not use this file except in compliance with the License.
+- * You may obtain a copy of the License at
+- *
+- *      http://www.apache.org/licenses/LICENSE-2.0
+- *
+- * Unless required by applicable law or agreed to in writing, software
+- * distributed under the License is distributed on an "AS IS" BASIS,
+- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+- * See the License for the specific language governing permissions and
+- * limitations under the License.
+- */
+-
+-package android.net;
+-
+-import android.content.Context;
+-import android.net.IEthernetManager;
+-import android.net.IEthernetServiceListener;
+-import android.net.IpConfiguration;
+-import android.os.Handler;
+-import android.os.Message;
+-import android.os.RemoteException;
+-
+-import java.util.ArrayList;
+-
+-/**
+- * A class representing the IP configuration of the Ethernet network.
+- *
+- * @hide
+- */
+-public class EthernetManager {
+-    private static final String TAG = "EthernetManager";
+-    private static final int MSG_AVAILABILITY_CHANGED = 1000;
+-
+-    private final Context mContext;
+-    private final IEthernetManager mService;
+-    private final Handler mHandler = new Handler() {
+-        @Override
+-        public void handleMessage(Message msg) {
+-            if (msg.what == MSG_AVAILABILITY_CHANGED) {
+-                boolean isAvailable = (msg.arg1 == 1);
+-                for (Listener listener : mListeners) {
+-                    listener.onAvailabilityChanged(isAvailable);
+-                }
+-            }
+-        }
+-    };
+-    private final ArrayList<Listener> mListeners = new ArrayList<Listener>();
+-    private final IEthernetServiceListener.Stub mServiceListener =
+-            new IEthernetServiceListener.Stub() {
+-                @Override
+-                public void onAvailabilityChanged(boolean isAvailable) {
+-                    mHandler.obtainMessage(
+-                            MSG_AVAILABILITY_CHANGED, isAvailable ? 1 : 0, 0, null).sendToTarget();
+-                }
+-            };
+-
+-    /**
+-     * A listener interface to receive notification on changes in Ethernet.
+-     */
+-    public interface Listener {
+-        /**
+-         * Called when Ethernet port's availability is changed.
+-         * @param isAvailable {@code true} if one or more Ethernet port exists.
+-         */
+-        public void onAvailabilityChanged(boolean isAvailable);
+-    }
+-
+-    /**
+-     * Create a new EthernetManager instance.
+-     * Applications will almost always want to use
+-     * {@link android.content.Context#getSystemService Context.getSystemService()} to retrieve
+-     * the standard {@link android.content.Context#ETHERNET_SERVICE Context.ETHERNET_SERVICE}.
+-     */
+-    public EthernetManager(Context context, IEthernetManager service) {
+-        mContext = context;
+-        mService = service;
+-    }
+-
+-    /**
+-     * Get Ethernet configuration.
+-     * @return the Ethernet Configuration, contained in {@link IpConfiguration}.
+-     */
+-    public IpConfiguration getConfiguration() {
+-        try {
+-            return mService.getConfiguration();
+-        } catch (NullPointerException | RemoteException e) {
+-            return new IpConfiguration();
+-        }
+-    }
+-
+-    /**
+-     * Set Ethernet configuration.
+-     */
+-    public void setConfiguration(IpConfiguration config) {
+-        try {
+-            mService.setConfiguration(config);
+-        } catch (NullPointerException | RemoteException e) {
+-        }
+-    }
+-
+-    /**
+-     * Indicates whether the system currently has one or more
+-     * Ethernet interfaces.
+-     */
+-    public boolean isAvailable() {
+-        try {
+-            return mService.isAvailable();
+-        } catch (NullPointerException | RemoteException e) {
+-            return false;
+-        }
+-    }
+-
+-    /**
+-     * Adds a listener.
+-     * @param listener A {@link Listener} to add.
+-     * @throws IllegalArgumentException If the listener is null.
+-     */
+-    public void addListener(Listener listener) {
+-        if (listener == null) {
+-            throw new IllegalArgumentException("listener must not be null");
+-        }
+-        mListeners.add(listener);
+-        if (mListeners.size() == 1) {
+-            try {
+-                mService.addListener(mServiceListener);
+-            } catch (NullPointerException | RemoteException e) {
+-            }
+-        }
+-    }
+-
+-    /**
+-     * Removes a listener.
+-     * @param listener A {@link Listener} to remove.
+-     * @throws IllegalArgumentException If the listener is null.
+-     */
+-    public void removeListener(Listener listener) {
+-        if (listener == null) {
+-            throw new IllegalArgumentException("listener must not be null");
+-        }
+-        mListeners.remove(listener);
+-        if (mListeners.isEmpty()) {
+-            try {
+-                mService.removeListener(mServiceListener);
+-            } catch (NullPointerException | RemoteException e) {
+-            }
+-        }
+-    }
+-}
+diff --git a/frameworks/base/core/java/android/net/EthernetManager.org b/frameworks/base/core/java/android/net/EthernetManager.org
+new file mode 100755
+index 0000000..f45737a
+--- /dev/null
++++ b/frameworks/base/core/java/android/net/EthernetManager.org
+@@ -0,0 +1,152 @@
++/*
++ * Copyright (C) 2014 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++package android.net;
++
++import android.content.Context;
++import android.net.IEthernetManager;
++import android.net.IEthernetServiceListener;
++import android.net.IpConfiguration;
++import android.os.Handler;
++import android.os.Message;
++import android.os.RemoteException;
++
++import java.util.ArrayList;
++
++/**
++ * A class representing the IP configuration of the Ethernet network.
++ *
++ * @hide
++ */
++public class EthernetManager {
++    private static final String TAG = "EthernetManager";
++    private static final int MSG_AVAILABILITY_CHANGED = 1000;
++
++    private final Context mContext;
++    private final IEthernetManager mService;
++    private final Handler mHandler = new Handler() {
++        @Override
++        public void handleMessage(Message msg) {
++            if (msg.what == MSG_AVAILABILITY_CHANGED) {
++                boolean isAvailable = (msg.arg1 == 1);
++                for (Listener listener : mListeners) {
++                    listener.onAvailabilityChanged(isAvailable);
++                }
++            }
++        }
++    };
++    private final ArrayList<Listener> mListeners = new ArrayList<Listener>();
++    private final IEthernetServiceListener.Stub mServiceListener =
++            new IEthernetServiceListener.Stub() {
++                @Override
++                public void onAvailabilityChanged(boolean isAvailable) {
++                    mHandler.obtainMessage(
++                            MSG_AVAILABILITY_CHANGED, isAvailable ? 1 : 0, 0, null).sendToTarget();
++                }
++            };
++
++    /**
++     * A listener interface to receive notification on changes in Ethernet.
++     */
++    public interface Listener {
++        /**
++         * Called when Ethernet port's availability is changed.
++         * @param isAvailable {@code true} if one or more Ethernet port exists.
++         */
++        public void onAvailabilityChanged(boolean isAvailable);
++    }
++
++    /**
++     * Create a new EthernetManager instance.
++     * Applications will almost always want to use
++     * {@link android.content.Context#getSystemService Context.getSystemService()} to retrieve
++     * the standard {@link android.content.Context#ETHERNET_SERVICE Context.ETHERNET_SERVICE}.
++     */
++    public EthernetManager(Context context, IEthernetManager service) {
++        mContext = context;
++        mService = service;
++    }
++
++    /**
++     * Get Ethernet configuration.
++     * @return the Ethernet Configuration, contained in {@link IpConfiguration}.
++     */
++    public IpConfiguration getConfiguration() {
++        try {
++            return mService.getConfiguration();
++        } catch (NullPointerException | RemoteException e) {
++            return new IpConfiguration();
++        }
++    }
++
++    /**
++     * Set Ethernet configuration.
++     */
++    public void setConfiguration(IpConfiguration config) {
++        try {
++            mService.setConfiguration(config);
++        } catch (NullPointerException | RemoteException e) {
++        }
++    }
++
++    /**
++     * Indicates whether the system currently has one or more
++     * Ethernet interfaces.
++     */
++    public boolean isAvailable() {
++        try {
++            return mService.isAvailable();
++        } catch (NullPointerException | RemoteException e) {
++            return false;
++        }
++    }
++
++    /**
++     * Adds a listener.
++     * @param listener A {@link Listener} to add.
++     * @throws IllegalArgumentException If the listener is null.
++     */
++    public void addListener(Listener listener) {
++        if (listener == null) {
++            throw new IllegalArgumentException("listener must not be null");
++        }
++        mListeners.add(listener);
++        if (mListeners.size() == 1) {
++            try {
++                mService.addListener(mServiceListener);
++            } catch (NullPointerException | RemoteException e) {
++            }
++        }
++    }
++
++    /**
++     * Removes a listener.
++     * @param listener A {@link Listener} to remove.
++     * @throws IllegalArgumentException If the listener is null.
++     */
++    public void removeListener(Listener listener) {
++        if (listener == null) {
++            throw new IllegalArgumentException("listener must not be null");
++        }
++        mListeners.remove(listener);
++        if (mListeners.isEmpty()) {
++            try {
++                mService.removeListener(mServiceListener);
++            } catch (NullPointerException | RemoteException e) {
++            }
++        }
++    }
++}
+diff --git a/frameworks/base/core/java/android/net/IEthernetManager.aidl b/frameworks/base/core/java/android/net/IEthernetManager.aidl
+index 88605b7..ca0a78b 100755
+--- a/frameworks/base/core/java/android/net/IEthernetManager.aidl
++++ b/frameworks/base/core/java/android/net/IEthernetManager.aidl
+@@ -47,18 +47,18 @@ import android.net.NetworkInfo;
+ /** {@hide} */
+ interface IEthernetManager
+ {
+-    IpConfiguration getConfiguration();
+-    void setConfiguration(in IpConfiguration config);
+-    boolean isAvailable();
++    IpConfiguration getConfiguration(String iface);
++    void setConfiguration(String iface, in IpConfiguration config);
++    boolean isAvailable(String iface);
+     void addListener(in IEthernetServiceListener listener);
+     void removeListener(in IEthernetServiceListener listener);
+-    LinkProperties getLinkProperties();
+-    DhcpInfo getDhcpInfo();
+-    boolean getLinkState();
+-    String getActiveIface();
+-    NetworkInfo getNetworkInfo();
++    LinkProperties getLinkProperties(String iface);
++    DhcpInfo getDhcpInfo(String iface);
++    boolean getLinkState(String iface);
++    String getActiveIface(String iface);
++    NetworkInfo getNetworkInfo(String iface);
+     boolean checkLink(String ifname);
+     IpConfiguration getConfigurationByIpAssignment(String type);
+-    void setEthernetEnabled(boolean enable);
+-    int getEthernetState();    
++    void setEthernetEnabled(String iface, boolean enable);
++    int getEthernetState();
+ }
+diff --git a/frameworks/base/ethernet/java/android/net/ethernet/EthernetManager.java b/frameworks/base/ethernet/java/android/net/ethernet/EthernetManager.java
+index 73a0138..0b0349f 100644
+--- a/frameworks/base/ethernet/java/android/net/ethernet/EthernetManager.java
++++ b/frameworks/base/ethernet/java/android/net/ethernet/EthernetManager.java
+@@ -107,6 +107,7 @@ public class EthernetManager {
+     public static final String EXTRA_NETWORK_INFO           = "networkInfo";
+     public static final String EXTRA_LINK_PROPERTIES        = "linkProperties";
+     public static final String EXTRA_ETHERNET_STATE         = "ethernet_state";
++    public static final String EXTRA_ETHERNET_INTERFACE         = "extra_ethernet_interface";
+ 
+     IEthernetManager mService           = null;
+     private Context mContext                    = null;
+@@ -152,9 +153,9 @@ public class EthernetManager {
+      * Get Ethernet configuration.
+      * @return the Ethernet Configuration, contained in {@link IpConfiguration}.
+      */
+-    public IpConfiguration getConfiguration() {
++    public IpConfiguration getConfiguration(String iface) {
+         try {
+-            return mService.getConfiguration();
++            return mService.getConfiguration(iface);
+         } catch (NullPointerException | RemoteException e) {
+             Log.e(TAG, "getConfiguration failed!");
+             return new IpConfiguration();
+@@ -197,9 +198,9 @@ public class EthernetManager {
+      * @hide
+      * Set Ethernet configuration.
+      */
+-    public void setConfiguration(IpConfiguration config) {
++    public void setConfiguration(String iface, IpConfiguration config) {
+         try {
+-            mService.setConfiguration(config);
++            mService.setConfiguration(iface, config);
+         } catch (NullPointerException | RemoteException e) {
+             Log.e(TAG, "setConfiguration failed!");
+         }
+@@ -209,9 +210,9 @@ public class EthernetManager {
+      * Indicates whether the system currently has one or more
+      * Ethernet interfaces.
+      */
+-    public boolean isAvailable() {
++    public boolean isAvailable(String iface) {
+         try {
+-            return mService.isAvailable();
++            return mService.isAvailable(iface);
+         } catch (NullPointerException | RemoteException e) {
+             return false;
+         }
+@@ -223,30 +224,35 @@ public class EthernetManager {
+      * @return interface name list on success, {@code null} on failure
+      * @hide
+      */
+-    public List<EthernetDevInfo> getDeviceList() {
++    public List<EthernetDevInfo> getDeviceList(String[] ifaces) {
+         List<EthernetDevInfo> devList = new ArrayList<EthernetDevInfo>();
+-        if(isAvailable()) {
++        for (String iface : ifaces) {
++            if (isAvailable(iface)) {
++                devList.add(getDevInfo(iface));
++            }
++        }
++        /*if(isAvailable()) {
+             return null;
+         } else {
+             devList.add(getDevInfo());
+-        }
++        }*/
+         return devList;
+     }
+ 
+     /**
+      * Get the selected network interface info
+      */
+-    public EthernetDevInfo getDevInfo() {
++    public EthernetDevInfo getDevInfo(String iface) {
+         try {
+-            EthernetDevInfo info = new EthernetDevInfo();
+-            if(getEthernetMode().equals(EthernetManager.ETHERNET_CONNECT_MODE_MANUAL)) {
+-                info = getStaticConfig();
++            EthernetDevInfo info;
++            if(getEthernetMode(iface).equals(EthernetManager.ETHERNET_CONNECT_MODE_MANUAL)) {
++                info = getStaticConfig(iface);
+             } else {
+-                info = new EthernetDevInfo(mService.getLinkProperties());
++                info = new EthernetDevInfo(mService.getLinkProperties(iface));
+             }
+-            String mIfname = mService.getActiveIface();
++            String mIfname = mService.getActiveIface(iface);
+             info.setIfName(mIfname);
+-            NetworkInfo mNetworkInfo = mService.getNetworkInfo();
++            NetworkInfo mNetworkInfo = mService.getNetworkInfo(iface);
+             if(mNetworkInfo != null) {
+                 String mHwAddr = mNetworkInfo.getExtraInfo();
+                 info.setHwaddr(mHwAddr);
+@@ -257,8 +263,9 @@ public class EthernetManager {
+             return null;
+         }
+     }
+-    public String getEthernetMode() {
+-        IpConfiguration config = getConfiguration();
++
++    public String getEthernetMode(String iface) {
++        IpConfiguration config = getConfiguration(iface);
+         IpAssignment mIpAssignment = config.getIpAssignment();
+         if(mIpAssignment == IpAssignment.STATIC) {
+             return ETHERNET_CONNECT_MODE_MANUAL;
+@@ -282,18 +289,18 @@ public class EthernetManager {
+         }
+     }
+ */    
+-    public void setEthernetMode(String type, EthernetDevInfo info) {
++    public void setEthernetMode(String iface, String type, EthernetDevInfo info) {
+         IpConfiguration config = info.getIpConfiguration(type);
+-        setConfiguration(config);
++        setConfiguration(iface, config);
+     }
+ 
+     /**
+      * Enable or Disable a ethernet service
+      * @param enable {@code true} to enable, {@code false} to disable
+      */
+-    public void setEthernetEnabled(boolean enable) {
++    public void setEthernetEnabled(String iface, boolean enable) {
+         try {
+-            mService.setEthernetEnabled(enable);
++            mService.setEthernetEnabled(iface, enable);
+         } catch (NullPointerException | RemoteException e) {
+             Log.e(TAG, "setEthernetEnabled failed!");
+         }
+@@ -321,9 +328,9 @@ public class EthernetManager {
+      *      false:  link down
+      *      true:   link up
+      */
+-    public boolean getLinkState() {
++    public boolean getLinkState(String iface) {
+         try {
+-            return mService.getLinkState();
++            return mService.getLinkState(iface);
+         } catch (NullPointerException | RemoteException e) {
+             Log.e(TAG, "getLinkState failed!");
+             return false;
+@@ -351,15 +358,15 @@ public class EthernetManager {
+      * Return ethernet information about the current configuration, if any is active.
+      * @return the Ethernet device information, contained in {@link EthernetDevInfo}.
+      */
+-    public synchronized EthernetDevInfo getStaticConfig() {
++    public synchronized EthernetDevInfo getStaticConfig(String iface) {
+     	EthernetDevInfo info = new EthernetDevInfo();
+         IpConfiguration config = getStaticConfiguration();
+         StaticIpConfiguration staticConfig = config.getStaticIpConfiguration();
+ 
+         try {
+-            String mIfname = mService.getActiveIface();
++            String mIfname = mService.getActiveIface(iface);
+             info.setIfName(mIfname);
+-            NetworkInfo mNetworkInfo = mService.getNetworkInfo();
++            NetworkInfo mNetworkInfo = mService.getNetworkInfo(mIfname);
+             if(mNetworkInfo != null) {
+                 String mHwAddr = mNetworkInfo.getExtraInfo();
+                 info.setHwaddr(mHwAddr);
+@@ -483,8 +490,8 @@ public class EthernetManager {
+     public static final String ETHERNET_INTERFACE_CHANGED_ACTION = ETHERNET_STATE_CHANGED_ACTION;
+ 
+     /* @hide */
+-    public boolean isConfigured() {
+-        if(getDevInfo() == null)
++    public boolean isConfigured(String iface) {
++        if(getDevInfo(iface) == null)
+             return false;
+         else
+             return true;
+@@ -493,17 +500,17 @@ public class EthernetManager {
+     /**
+      * @hide - it is same with getStaticConfig()
+      */
+-    public EthernetDevInfo getSavedConfig() {
+-        return getStaticConfig();
++    public EthernetDevInfo getSavedConfig(String iface) {
++        return getStaticConfig(iface);
+     }
+ 
+ 
+     /**
+      * return DhcpInfo if needed, return EthernetDevInfo use getDevInfo
+      */
+-    public DhcpInfo getDhcpInfo() {
++    public DhcpInfo getDhcpInfo(String iface) {
+         try {
+-            return mService.getDhcpInfo();
++            return mService.getDhcpInfo(iface);
+         } catch (NullPointerException | RemoteException e) {
+             Log.e(TAG, "getDhcpInfo failed!");
+             return null;
+@@ -513,23 +520,23 @@ public class EthernetManager {
+     /**
+      * @hide - it is same with setStaticConfig
+      */
+-    public void updateDevInfo(EthernetDevInfo info) {
++    public void updateDevInfo(String iface, EthernetDevInfo info) {
+         String mode = info.getMode();
+-        setEthernetMode(mode, info);
++        setEthernetMode(iface, mode, info);
+     }
+ 
+     /**
+      * @hide - it is same with getDeviceList
+-     */
++
+     public List<EthernetDevInfo> getDeviceNameList() {
+         return getDeviceList();
+-    }
++    }*/
+     /**
+      * @hide - it is same with setEthernetEnabled
+      */
+-    public void setEnabled(boolean enable) {
+-        setEthernetEnabled(enable);
+-		}
++    public void setEnabled(String iface, boolean enable) {
++        setEthernetEnabled(iface, enable);
++    }
+ 
+     /**
+      * @hide - it is same with getEthernetState
+@@ -549,8 +556,8 @@ public class EthernetManager {
+     }
+ 
+     /* @hide */
+-    public boolean isDhcp() {
+-        return getEthernetMode().equals(ETHERNET_CONNECT_MODE_DHCP);
++    public boolean isDhcp(String iface) {
++        return getEthernetMode(iface).equals(ETHERNET_CONNECT_MODE_DHCP);
+     }
+ 
+     /* @hide */
+@@ -625,7 +632,7 @@ public class EthernetManager {
+      */
+     public void setDefaultConf() {
+         DhcpInfo dhcpInfo = new DhcpInfo();
+-        setEthernetMode(ETHERNET_CONNECT_MODE_DHCP, dhcpInfo);
++        setEthernetMode("eth0", ETHERNET_CONNECT_MODE_DHCP, dhcpInfo);
+     }
+ 
+     /**
+@@ -642,8 +649,8 @@ public class EthernetManager {
+     /**
+      * @hide - it is same with isConfigured
+      */
+-    public boolean isEthernetConfigured() {
+-        return isConfigured();
++    public boolean isEthernetConfigured(String iface) {
++        return isConfigured(iface);
+     }
+ 
+     /**
+@@ -653,27 +660,27 @@ public class EthernetManager {
+      *     ETHERNET_CONNECT_MODE_MANUAL
+      * @hide
+      */
+-    public void setEthernetMode(String mode, DhcpInfo dhcpInfo) {
++    public void setEthernetMode(String iface, String mode, DhcpInfo dhcpInfo) {
+         String ipAddr = addrToString(dhcpInfo.ipAddress);
+         String gwAddr = addrToString(dhcpInfo.gateway);
+         String maskAddr = addrToString(dhcpInfo.netmask);
+         String dns1Addr = addrToString(dhcpInfo.dns1);
+         String dns2Addr = addrToString(dhcpInfo.dns2);
+ 
+-        EthernetDevInfo cfg = getSavedConfig();
++        EthernetDevInfo cfg = getSavedConfig(iface);
+         cfg.setMode(ETHERNET_CONNECT_MODE_MANUAL);
+         cfg.setIpAddress(ipAddr);
+         cfg.setGateWay(gwAddr);
+         cfg.setNetMask(maskAddr);
+         cfg.setDns1(dns1Addr);
+         cfg.setDns2(dns2Addr);
+-        setEthernetMode(mode, cfg);
++        setEthernetMode(iface, mode, cfg);
+     }
+ 
+     /* @hide */
+     public String getInterfaceName() {
+         Log.d(TAG, " getInterfaceName:");
+-        return getDevInfo().getIfName();
++        return "eth0";//getDevInfo().getIfName();
+     }
+ 
+     /* @hide */
+@@ -684,10 +691,10 @@ public class EthernetManager {
+         return true;
+     }
+ 
+-    /* @hide */
++    /* @hide
+     public boolean getNetLinkStatus() {
+         return getNetLinkStatus(getInterfaceName()) > 0;
+-    }
++    } */
+ 
+     /**
+      * @hide
+diff --git a/frameworks/opt/net/ethernet/java/com/android/server/ethernet/EthernetConfigStore.java b/frameworks/opt/net/ethernet/java/com/android/server/ethernet/EthernetConfigStore.java
+index 707723b..28b2dc3 100755
+--- a/frameworks/opt/net/ethernet/java/com/android/server/ethernet/EthernetConfigStore.java
++++ b/frameworks/opt/net/ethernet/java/com/android/server/ethernet/EthernetConfigStore.java
+@@ -51,7 +51,7 @@ public class EthernetConfigStore extends IpConfigStore {
+         if (networks.size() == 0) {
+             Log.w(TAG, "No Ethernet configuration found. Using default.");
+             //return new IpConfiguration(IpAssignment.DHCP, ProxySettings.NONE, null, null); //xiehb
+-            LinkAddress linkAddress = new LinkAddress("0.0.0.0/24");
++            LinkAddress linkAddress = new LinkAddress("192.168.2.100/24");
+             StaticIpConfiguration staticIpConfiguration = new StaticIpConfiguration();
+             staticIpConfiguration.ipAddress = linkAddress;
+             return new IpConfiguration(IpAssignment.STATIC
+@@ -64,19 +64,19 @@ public class EthernetConfigStore extends IpConfigStore {
+             // Currently we only support a single Ethernet interface.
+             Log.w(TAG, "Multiple Ethernet configurations detected. Only reading first one.");
+         }
+-
+         return networks.valueAt(0);
+     }
+ 
+     public void writeIpAndProxyConfigurations(IpConfiguration config) {
+         SparseArray<IpConfiguration> networks = new SparseArray<IpConfiguration>();
+         networks.put(0, config);
+-        writeIpAndProxyConfigurations(ipConfigFile, networks);
+ 		/*add for gmac  begin*/
+         if (config.ipAssignment == IpAssignment.STATIC) {
+             writeIpAndProxyConfigurations(staticIpConfigFile, networks);
+         } else if (config.ipAssignment == IpAssignment.PPPOE) {
+             writeIpAndProxyConfigurations(pppoeConfigFile, networks);
++        } else {
++            writeIpAndProxyConfigurations(ipConfigFile, networks);
+         }
+ 		/*add for gmac  end*/
+     }
+@@ -95,10 +95,23 @@ public class EthernetConfigStore extends IpConfigStore {
+             networks = readIpAndProxyConfigurations(ipConfigFile);
+         }
+ 
+-        if (networks.size() == 0) {
+-            Log.w(TAG, "No Ethernet configuration found. Using default.");
+-            return new IpConfiguration(IpAssignment.DHCP, ProxySettings.NONE, null, null); //xiehb
++        if (type != IpAssignment.STATIC && networks.size() == 0) {
++            Log.w(TAG, "No Ethernet configuration found. Using default DHCP.");
++            return new IpConfiguration(IpAssignment.DHCP,
++                    ProxySettings.NONE,
++                    null,
++                    null); //xiehb
+             //return new IpConfiguration(IpAssignment.STATIC, ProxySettings.NONE, null, null);
++        } else if(networks.size() == 0) {
++            Log.w(TAG, "No Ethernet configuration found. Using default STATIC.");
++            //return new IpConfiguration(IpAssignment.DHCP, ProxySettings.NONE, null, null); //xiehb
++            LinkAddress linkAddress = new LinkAddress("192.168.2.100/24");
++            StaticIpConfiguration staticIpConfiguration = new StaticIpConfiguration();
++            staticIpConfiguration.ipAddress = linkAddress;
++            return new IpConfiguration(IpAssignment.STATIC
++                    , ProxySettings.NONE
++                    , staticIpConfiguration
++                    , null);
+         }
+ 
+         if (networks.size() > 1) {
+diff --git a/frameworks/opt/net/ethernet/java/com/android/server/ethernet/EthernetNetworkFactory.java b/frameworks/opt/net/ethernet/java/com/android/server/ethernet/EthernetNetworkFactory.java
+index e84c1ca..803811a 100644
+--- a/frameworks/opt/net/ethernet/java/com/android/server/ethernet/EthernetNetworkFactory.java
++++ b/frameworks/opt/net/ethernet/java/com/android/server/ethernet/EthernetNetworkFactory.java
+@@ -44,7 +44,7 @@ import android.os.RemoteCallbackList;
+ import android.os.RemoteException;
+ import android.os.ServiceManager;
+ import android.text.TextUtils;
+-import android.util.Log;
++import android.util.Slog;
+ /*add for eth 20160416  begin*/
+ import android.content.Intent;                                                                                                
+ import android.content.IntentFilter;   
+@@ -52,6 +52,7 @@ import android.content.BroadcastReceiver;
+ 
+ import android.os.UserHandle;
+ import android.os.SystemProperties;
++import android.util.Slog;
+ /*add for eth 20160416  end*/
+ 
+ import com.android.internal.util.IndentingPrintWriter;
+@@ -106,13 +107,14 @@ class EthernetNetworkFactory {
+     private final RemoteCallbackList<IEthernetServiceListener> mListeners;
+ 
+     /** Data members. All accesses to these must be synchronized(this). */
+-    private static String mIface = "";
++    private String mIface;
++    private String mIsTracking;
+     private String mHwAddr;
+-    private static boolean mLinkUp;
++    private boolean mLinkUp;
+     private NetworkInfo mNetworkInfo;
+     private LinkProperties mLinkProperties;
+     /*add for eth 20160416  begin*/                                    
+- private static DhcpResults mDhcpResults;                               
++ private DhcpResults mDhcpResults;
+  private Handler mHandler;                                              
+                                                                         
+  private static final int CMD_REQUEST_NETWORK_AGAIN = 0;                
+@@ -124,13 +126,14 @@ class EthernetNetworkFactory {
+  private final IntentFilter mFilter; 
+ /*add for eth  20160416  end*/                                      
+ 
+-    EthernetNetworkFactory(RemoteCallbackList<IEthernetServiceListener> listeners) {
++    EthernetNetworkFactory(String iface, RemoteCallbackList<IEthernetServiceListener> listeners) {
++        mIface = iface;
+         mNetworkInfo = new NetworkInfo(ConnectivityManager.TYPE_ETHERNET, 0, NETWORK_TYPE, "");
+         mLinkProperties = new LinkProperties();
+         mDhcpResults = new DhcpResults();
+         initNetworkCapabilities();
+         mListeners = listeners;
+-	 mFilter = new IntentFilter();                                                                                            
++	    mFilter = new IntentFilter();
+         mFilter.addAction(EthernetManager.ETHERNET_STATE_CHANGED_ACTION);                                                        
+         mFilter.addAction(EthernetManager.NETWORK_STATE_CHANGED_ACTION);                                                         
+         mEthStateReceiver = new BroadcastReceiver() {                                                                            
+@@ -145,12 +148,16 @@ class EthernetNetworkFactory {
+ 			String action = intent.getAction(); 																					 
+ 			if (EthernetManager.NETWORK_STATE_CHANGED_ACTION.equals(action)) {														 
+ 				final int event = intent.getIntExtra(EthernetManager.EXTRA_ETHERNET_STATE,											 
+-						EthernetManager.EVENT_ETHERNET_CONNECT_SUCCESSED);															 
++						EthernetManager.EVENT_ETHERNET_CONNECT_SUCCESSED);
++				final String iface = intent.getStringExtra(EthernetManager.EXTRA_ETHERNET_INTERFACE);
++				if (!iface.equals(mIface)) {
++                    return;
++                }
+ 				switch(event) { 																									 																											 
+ 					case EthernetManager.EVENT_ETHERNET_DISCONNECT_SUCCESSED:														 
+ 					//case EthernetManager.EVENT_PPPOE_DISCONNECT_SUCCESSED:		
+ 					case EthernetManager.EVENT_ETHERNET_CONNECT_FAILED:
+-						Log.d(TAG, "handleEvent mLinkUp=" + mLinkUp);
++						Slog.d(TAG, "handleEvent mLinkUp=" + mLinkUp);
+ 						againscore=70;
+ 						if(mLinkUp){
+ 							synchronized(EthernetNetworkFactory.this) {						
+@@ -160,7 +167,7 @@ class EthernetNetworkFactory {
+ 							 try {
+                                   mNMService.clearInterfaceAddresses(mIface);
+                              } catch (Exception e) {
+-                                 Log.e(TAG, "Failed to clear addresses or disable ipv6" + e);
++                                 Slog.e(TAG, "Failed to clear addresses or disable ipv6" + e);
+                              }
+                                 					
+ 							}
+@@ -197,7 +204,7 @@ class EthernetNetworkFactory {
+         if (!mIface.equals(iface)) {
+             return;
+         }
+-        Log.d(TAG, "updateInterface: " + iface + " link " + (up ? "up" : "down"));
++        Slog.d(TAG, "updateInterface: " + iface + " link " + (up ? "up" : "down"));
+ 
+         synchronized(this) {
+             mLinkUp = up;
+@@ -223,17 +230,23 @@ class EthernetNetworkFactory {
+     private class InterfaceObserver extends BaseNetworkObserver {
+         @Override
+         public void interfaceLinkStateChanged(String iface, boolean up) {
+-            updateInterfaceState(iface, up);
++            if (iface.equals(mIface)) {
++                updateInterfaceState(iface, up);
++            }
+         }
+ 
+         @Override
+         public void interfaceAdded(String iface) {
+-            maybeTrackInterface(iface);
++            if (iface.equals(mIface)) {
++                maybeTrackInterface(iface);
++            }
+         }
+ 
+         @Override
+         public void interfaceRemoved(String iface) {
+-            stopTrackingInterface(iface);
++            if (iface.equals(mIface)) {
++                stopTrackingInterface(iface);
++            }
+         }
+     }
+ 
+@@ -246,7 +259,7 @@ class EthernetNetworkFactory {
+             InterfaceConfiguration config = mNMService.getInterfaceConfig(iface);
+ 
+             if (config == null) {
+-                Log.e(TAG, "Null iterface config for " + iface + ". Bailing out.");
++                Slog.e(TAG, "Null iterface config for " + iface + ". Bailing out.");
+                 return;
+             }
+ 
+@@ -256,23 +269,29 @@ class EthernetNetworkFactory {
+                     mNetworkInfo.setIsAvailable(true);
+                     mNetworkInfo.setExtraInfo(mHwAddr);
+                 } else {
+-                    Log.e(TAG, "Interface unexpectedly changed from " + iface + " to " + mIface);
++                    Slog.e(TAG, "Interface unexpectedly changed from " + iface + " to " + mIface);
+                     mNMService.setInterfaceDown(iface);
+                 }
+             }
+         } catch (RemoteException | IllegalStateException e) {  //add IllegalStateException e by smdt lzl  20160416
+-            Log.e(TAG, "Error upping interface " + mIface + ": " + e);
++            Slog.e(TAG, "Error upping interface " + mIface + ": " + e);
+         }
+     }
+ 
+     private boolean maybeTrackInterface(String iface) {
++        Slog.d(TAG, "EthernetFactory: "+ mIface + " maybeTrackInterface: " + iface);
+         // If we don't already have an interface, and if this interface matches
+         // our regex, start tracking it.
+-        if (!iface.matches(mIfaceMatch) || isTrackingInterface())
++        if (!iface.matches(mIfaceMatch) || isTrackingInterface()) {
++            Slog.d(TAG, "not match 1");
+             return false;
+-            
+-	sendEthStateBroadcast(EthernetManager.EVENT_INTERFACE_ADDED);
+-        Log.d(TAG, "Started tracking interface " + iface);
++        }
++        if (!iface.equals(mIface)) {
++            Slog.d(TAG, "not match 2");
++            return false;
++        }
++	    sendEthStateBroadcast(EthernetManager.EVENT_INTERFACE_ADDED);
++        Slog.d(TAG, "Started tracking interface " + iface);
+         setInterfaceUp(iface);
+         return true;
+     }
+@@ -280,8 +299,8 @@ class EthernetNetworkFactory {
+     private void stopTrackingInterface(String iface) {
+         if (!iface.equals(mIface))
+             return;
+-	sendEthStateBroadcast(EthernetManager.EVENT_INTERFACE_REMOVED);
+-        Log.d(TAG, "Stopped tracking interface " + iface);
++	    sendEthStateBroadcast(EthernetManager.EVENT_INTERFACE_REMOVED);
++        Slog.d(TAG, "Stopped tracking interface " + iface);
+         // TODO: Unify this codepath with stop().
+         synchronized (this) {
+             NetworkUtils.stopDhcp(mIface);
+@@ -290,7 +309,7 @@ class EthernetNetworkFactory {
+             try {                                                                
+                 mNMService.clearInterfaceAddresses(mIface);                      
+             } catch (Exception e) {                                              
+-                Log.e(TAG, "Failed to clear addresses or disable ipv6" + e);     
++                Slog.e(TAG, "Failed to clear addresses or disable ipv6" + e);     
+             }                                                                    
+ 	/*add for eth 20160416  end*/                                    
+ 
+@@ -303,7 +322,7 @@ class EthernetNetworkFactory {
+             mNetworkInfo = new NetworkInfo(ConnectivityManager.TYPE_ETHERNET, 0, NETWORK_TYPE, "");
+             mLinkProperties = new LinkProperties();
+             			/*add for eth 20160416  begin*/                                               
+-            IpConfiguration config = mEthernetManager.getConfiguration();                     
++            IpConfiguration config = mEthernetManager.getConfiguration(iface);
+             if((config.getIpAssignment() == IpAssignment.PPPOE)) {                            
+                 sendNetStateBroadcast(EthernetManager.EVENT_PPPOE_DISCONNECT_SUCCESSED);      
+             } else {                                                                          
+@@ -320,16 +339,16 @@ class EthernetNetworkFactory {
+       //          staticConfig.dnsServers.size() > 0) {
+       if (staticConfig.ipAddress != null) {
+             try {
+-                Log.i(TAG, "Applying static IPv4 configuration to " + mIface + ": " + staticConfig);
++                Slog.i(TAG, "Applying static IPv4 configuration to " + mIface + ": " + staticConfig);
+                 InterfaceConfiguration config = mNMService.getInterfaceConfig(mIface);
+                 config.setLinkAddress(staticConfig.ipAddress);
+                 mNMService.setInterfaceConfig(mIface, config);
+                 return true;
+             } catch(RemoteException|IllegalStateException e) {
+-               Log.e(TAG, "Setting static IP address failed: " + e.getMessage());
++               Slog.e(TAG, "Setting static IP address failed: " + e.getMessage());
+             }
+         } else {
+-            Log.e(TAG, "Invalid static IP configuration.");
++            Slog.e(TAG, "Invalid static IP configuration.");
+         }
+         return false;
+     }
+@@ -338,7 +357,7 @@ class EthernetNetworkFactory {
+         synchronized (EthernetNetworkFactory.this) {
+             if (mNetworkAgent == null) return;
+             if (DBG) {
+-                Log.i(TAG, "Updating mNetworkAgent with: " +
++                Slog.i(TAG, "Updating mNetworkAgent with: " +
+                       mNetworkCapabilities + ", " +
+                       mNetworkInfo + ", " +
+                       mLinkProperties);
+@@ -356,11 +375,11 @@ class EthernetNetworkFactory {
+         // TODO: Handle DHCP renew.
+         Thread dhcpThread = new Thread(new Runnable() {
+             public void run() {
+-               // if (DBG) Log.i(TAG, "dhcpThread(" + mIface + "): mNetworkInfo=" + mNetworkInfo);
+-                 if (DBG) Log.i(TAG, "dhcpThread(+" + mIface + "): mNetworkInfo=" + mNetworkInfo);
++               // if (DBG) Slog.i(TAG, "dhcpThread(" + mIface + "): mNetworkInfo=" + mNetworkInfo);
++                Slog.d(TAG, "dhcpThread(+" + mIface + "): mNetworkInfo=" + mNetworkInfo);
+                 LinkProperties linkProperties;
+ 
+-                IpConfiguration config = mEthernetManager.getConfiguration();
++                IpConfiguration config = mEthernetManager.getConfiguration(mIface);
+ 
+                 if (config.getIpAssignment() == IpAssignment.STATIC) {
+                     if (!setStaticIpAddress(config.getStaticIpConfiguration())) {
+@@ -379,7 +398,7 @@ class EthernetNetworkFactory {
+                     // startPppoe now                                                                      
+                     if (pppoeConfig == null || !NetworkUtils.startPppoe(mIface,                            
+                             pppoeConfig.username, dhcpResults)) {                                          
+-                        Log.e(TAG, "startPppoe error:" + NetworkUtils.getPppoeError());                    
++                        Slog.e(TAG, "startPppoe error:" + NetworkUtils.getPppoeError());                    
+                         // set our score lower than any network could go                                   
+                         // so we get dropped.                                                              
+                         mFactory.setScoreFilter(-1);                                                       
+@@ -407,7 +426,7 @@ class EthernetNetworkFactory {
+                     // we will lose our IP address and connectivity without
+                     // noticing.
+                     if (!NetworkUtils.runDhcp(mIface, dhcpResults)) {
+-                        Log.e(TAG, "DHCP request error:" + NetworkUtils.getDhcpError());
++                        Slog.e(TAG, "DHCP request error:" + NetworkUtils.getDhcpError());
+                         // set our score lower than any network could go
+                         // so we get dropped.
+                         mFactory.setScoreFilter(-1);
+@@ -443,7 +462,7 @@ class EthernetNetworkFactory {
+ 
+                 synchronized(EthernetNetworkFactory.this) {
+                     if (mNetworkAgent != null) {
+-                        Log.e(TAG, "Already have a NetworkAgent - aborting new request");
++                        Slog.e(TAG, "Already have a NetworkAgent - aborting new request");
+                         return;
+                     }
+                     mLinkProperties = linkProperties;
+@@ -465,13 +484,13 @@ class EthernetNetworkFactory {
+                             synchronized(EthernetNetworkFactory.this) {
+                                 if (this == mNetworkAgent) {
+                                     NetworkUtils.stopDhcp(mIface);
+-				NetworkUtils.stopPppoe(mIface); 
++				                    NetworkUtils.stopPppoe(mIface); 
+                                     mLinkProperties.clear();
+                                     mDhcpResults.clear(); 
+                                     mNetworkInfo.setDetailedState(DetailedState.DISCONNECTED, null,
+                                             mHwAddr);
+                                     			/*add for eth  20160416  begin*/                                                          
+-                                    IpConfiguration config = mEthernetManager.getConfiguration();                                
++                                    IpConfiguration config = mEthernetManager.getConfiguration(mIface);
+                                     if((config.getIpAssignment() == IpAssignment.PPPOE)) {                                       
+                                         sendNetStateBroadcast(EthernetManager.EVENT_PPPOE_DISCONNECT_SUCCESSED);                 
+                                     } else {                                                                                     
+@@ -484,10 +503,10 @@ class EthernetNetworkFactory {
+                                     try {
+                                         mNMService.clearInterfaceAddresses(mIface);
+                                     } catch (Exception e) {
+-                                        Log.e(TAG, "Failed to clear addresses or disable ipv6" + e);
++                                        Slog.e(TAG, "Failed to clear addresses or disable ipv6" + e);
+                                     }
+                                 } else {
+-                                    Log.d(TAG, "Ignoring unwanted as we have a more modern " +
++                                    Slog.d(TAG, "Ignoring unwanted as we have a more modern " +
+                                             "instance");
+                                 }
+                             }
+@@ -513,7 +532,7 @@ class EthernetNetworkFactory {
+         mIfaceMatch = context.getResources().getString(
+                 com.android.internal.R.string.config_ethernet_iface_regex);
+ 
+-	context.registerReceiver(mEthStateReceiver, mFilter); 	
++	    context.registerReceiver(mEthStateReceiver, mFilter);
+ 
+         // Create and register our NetworkFactory.
+         mFactory = new LocalNetworkFactory(NETWORK_TYPE, context, target.getLooper());
+@@ -548,7 +567,7 @@ class EthernetNetworkFactory {
+         try {
+             mNMService.registerObserver(mInterfaceObserver);
+         } catch (RemoteException e) {
+-            Log.e(TAG, "Could not register InterfaceObserver " + e);
++            Slog.e(TAG, "Could not register InterfaceObserver " + e);
+         }
+ 
+         // If an Ethernet interface is already connected, start tracking that.
+@@ -573,7 +592,7 @@ class EthernetNetworkFactory {
+                 }
+             }
+          } catch (RemoteException e) {   //delete |IllegalStateException e for eth 20160416
+-            Log.e(TAG, "Could not get list of interfaces " + e);
++            Slog.e(TAG, "Could not get list of interfaces " + e);
+         }
+     }
+ 
+@@ -584,7 +603,7 @@ class EthernetNetworkFactory {
+         try {                                                                         
+             mNMService.clearInterfaceAddresses(mIface);                               
+         } catch (Exception e) {                                                       
+-            Log.e(TAG, "Failed to clear addresses or disable ipv6" + e);              
++            Slog.e(TAG, "Failed to clear addresses or disable ipv6" + e);              
+         }                                                                             
+ 		/*add for eth 20160416  end*/                                             
+ 
+@@ -604,7 +623,7 @@ class EthernetNetworkFactory {
+         mNetworkInfo = new NetworkInfo(ConnectivityManager.TYPE_ETHERNET, 0, NETWORK_TYPE, "");
+                                                                                                             
+ 		/*add for eth  20160416  begin*/                                                         
+-        IpConfiguration config = mEthernetManager.getConfiguration();                               
++        IpConfiguration config = mEthernetManager.getConfiguration(mIface);
+         if((config.getIpAssignment() == IpAssignment.PPPOE)) {                                      
+             sendNetStateBroadcast(EthernetManager.EVENT_PPPOE_DISCONNECT_SUCCESSED);                
+         } else {                                                                                    
+@@ -626,7 +645,7 @@ class EthernetNetworkFactory {
+     }
+ 
+     public synchronized boolean isTrackingInterface() {
+-        return !TextUtils.isEmpty(mIface);
++        return !TextUtils.isEmpty(mIsTracking);
+     }
+ 
+     /**
+@@ -635,7 +654,8 @@ class EthernetNetworkFactory {
+      */
+     private void setInterfaceInfoLocked(String iface, String hwAddr) {
+         boolean oldAvailable = isTrackingInterface();
+-        mIface = iface;
++        //mIface = iface;
++        mIsTracking = iface;
+         mHwAddr = hwAddr;
+         boolean available = isTrackingInterface();
+ 
+@@ -677,7 +697,8 @@ class EthernetNetworkFactory {
+         intent.putExtra(EthernetManager.EXTRA_NETWORK_INFO, mNetworkInfo);                     
+         intent.putExtra(EthernetManager.EXTRA_LINK_PROPERTIES,                                 
+                 new LinkProperties (mLinkProperties));                                         
+-        intent.putExtra(EthernetManager.EXTRA_ETHERNET_STATE, event);                          
++        intent.putExtra(EthernetManager.EXTRA_ETHERNET_STATE, event);
++        intent.putExtra(EthernetManager.EXTRA_ETHERNET_INTERFACE, mIface);
+         mContext.sendStickyBroadcastAsUser(intent, UserHandle.ALL);                            
+     }                                                                                          
+                                                                                                
+@@ -686,7 +707,8 @@ class EthernetNetworkFactory {
+         intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT                       
+                 | Intent.FLAG_RECEIVER_REPLACE_PENDING);                                       
+         intent.putExtra(EthernetManager.EXTRA_ETHERNET_STATE, event);                          
+-        mContext.sendStickyBroadcastAsUser(intent, UserHandle.ALL);                            
++        intent.putExtra(EthernetManager.EXTRA_ETHERNET_INTERFACE, mIface);
++        mContext.sendStickyBroadcastAsUser(intent, UserHandle.ALL);
+     }                                                                                          
+                                                                                                
+     public synchronized DhcpResults getDhcpResults() {                                         
+diff --git a/frameworks/opt/net/ethernet/java/com/android/server/ethernet/EthernetServiceImpl.java b/frameworks/opt/net/ethernet/java/com/android/server/ethernet/EthernetServiceImpl.java
+index 3132932..e75796e 100755
+--- a/frameworks/opt/net/ethernet/java/com/android/server/ethernet/EthernetServiceImpl.java
++++ b/frameworks/opt/net/ethernet/java/com/android/server/ethernet/EthernetServiceImpl.java
+@@ -29,6 +29,7 @@ import android.os.HandlerThread;
+ import android.os.RemoteCallbackList;
+ import android.os.RemoteException;
+ import android.provider.Settings;
++import android.util.ArrayMap;
+ import android.util.Log;
+ import android.util.PrintWriterPrinter;
+ 
+@@ -50,6 +51,9 @@ import com.android.internal.util.IndentingPrintWriter;
+ 
+ import java.io.FileDescriptor;
+ import java.io.PrintWriter;
++import java.util.HashMap;
++import java.util.Iterator;
++import java.util.Map;
+ import java.util.concurrent.atomic.AtomicBoolean;
+ 
+ /*add for gmac  begin*/
+@@ -71,26 +75,37 @@ import java.io.IOException;
+  */
+ public class EthernetServiceImpl extends IEthernetManager.Stub {
+     private static final String TAG = "EthernetServiceImpl";
+-
++    private static final String ETH0 = "eth0";
++    private static final String ETH1 = "eth1";
+     private final Context mContext;
+     private final EthernetConfigStore mEthernetConfigStore;
+     private final AtomicBoolean mStarted = new AtomicBoolean(false);
+-    private IpConfiguration mIpConfiguration;
+-
++    private final ArrayMap<String, IpConfiguration> mIpConfiguration;//eth0 use dhpc, eth1 static
+     private Handler mHandler;
+-    private final EthernetNetworkFactory mTracker;
++    private final ArrayMap<String, EthernetNetworkFactory> mTracker;
+     private final RemoteCallbackList<IEthernetServiceListener> mListeners =
+             new RemoteCallbackList<IEthernetServiceListener>();
+ 
+     public EthernetServiceImpl(Context context) {
+         mContext = context;
+         Log.i(TAG, "Creating EthernetConfigStore");
+-        mEthernetConfigStore = new EthernetConfigStore();
+-        mIpConfiguration = mEthernetConfigStore.readIpAndProxyConfigurations();
+ 
+-        Log.i(TAG, "Read stored IP configuration: " + mIpConfiguration);
++        mEthernetConfigStore = new EthernetConfigStore();
++        mIpConfiguration = new ArrayMap<>();
++        mIpConfiguration.put(ETH0, mEthernetConfigStore.
++                readIpAndProxyConfigurations(IpAssignment.DHCP));
++        mIpConfiguration.put(ETH1, mEthernetConfigStore.
++                readIpAndProxyConfigurations());
++
++        Iterator<Map.Entry<String, IpConfiguration>> iterator = mIpConfiguration.entrySet().iterator();
++        while (iterator.hasNext()) {
++            Map.Entry<String, IpConfiguration> entry = iterator.next();
++            Log.i(TAG, "Read stored IP configuration: " + entry.getValue());
++        }
+ 
+-        mTracker = new EthernetNetworkFactory(mListeners);
++        mTracker = new ArrayMap<>();
++        mTracker.put(ETH0,new EthernetNetworkFactory(ETH0, mListeners));
++        mTracker.put(ETH1,new EthernetNetworkFactory(ETH1, mListeners));
+     }
+ 
+     private void enforceAccessPermission() {
+@@ -127,11 +142,15 @@ public class EthernetServiceImpl extends IEthernetManager.Stub {
+         boolean ethEnabled = (getEthernetState() == EthernetManager.ETHERNET_STATE_ENABLED);
+         Log.i(TAG, "EthernetService starting up with Ethernet " +
+                 (ethEnabled ? "enabled" : "disabled"));
+-        if(ethEnabled) {
+-            mTracker.start(mContext, mHandler);
++        if (ethEnabled) {
++            Iterator<Map.Entry<String, EthernetNetworkFactory>> iterator = mTracker.entrySet().iterator();
++            while (iterator.hasNext()) {
++                Map.Entry<String, EthernetNetworkFactory> entry = iterator.next();
++                Log.i(TAG, entry.getKey() + " Factory is stated");
++                entry.getValue().start(mContext, mHandler);
++            }
+         }
+-		/*add for gmac  end*/
+-	
++        /*add for gmac  end*/
+ 
+         mStarted.set(true);
+     }
+@@ -141,11 +160,10 @@ public class EthernetServiceImpl extends IEthernetManager.Stub {
+      * @return the Ethernet Configuration, contained in {@link IpConfiguration}.
+      */
+     @Override
+-    public IpConfiguration getConfiguration() {
++    public IpConfiguration getConfiguration(String iface) {
+         enforceAccessPermission();
+-
+         synchronized (mIpConfiguration) {
+-            return new IpConfiguration(mIpConfiguration);
++            return new IpConfiguration(mIpConfiguration.get(iface));
+         }
+     }
+ 
+@@ -156,9 +174,9 @@ public class EthernetServiceImpl extends IEthernetManager.Stub {
+      */
+     public IpConfiguration getConfigurationByIpAssignment(String type) {
+         enforceAccessPermission();
+-        if(type.equals(EthernetManager.ETHERNET_CONNECT_MODE_MANUAL)) {
++        if (type.equals(EthernetManager.ETHERNET_CONNECT_MODE_MANUAL)) {
+             return mEthernetConfigStore.readIpAndProxyConfigurations(IpAssignment.STATIC);
+-        } else if(type.equals(EthernetManager.ETHERNET_CONNECT_MODE_PPPOE)) {
++        } else if (type.equals(EthernetManager.ETHERNET_CONNECT_MODE_PPPOE)) {
+             return mEthernetConfigStore.readIpAndProxyConfigurations(IpAssignment.PPPOE);
+         } else {
+             return mEthernetConfigStore.readIpAndProxyConfigurations(IpAssignment.DHCP);
+@@ -182,29 +200,28 @@ public class EthernetServiceImpl extends IEthernetManager.Stub {
+      * Set Ethernet configuration
+      */
+     @Override
+-    public void setConfiguration(IpConfiguration config) {
++    public void setConfiguration(String iface, IpConfiguration config) {
+         if (!mStarted.get()) {
+             Log.w(TAG, "System isn't ready enough to change ethernet configuration");
+         }
+ 
+ 		enforceChangePermission();  //add for gmac
+         enforceConnectivityInternalPermission();
+-
+         synchronized (mIpConfiguration) {
+             mEthernetConfigStore.writeIpAndProxyConfigurations(config);
+ 
+-			/*add for gmac  begin*/
+-            if(config.ipAssignment == IpAssignment.PPPOE) {
+-                config.getPppoeConfiguration().saveLoginInfo(getActiveIface());
++        /*add for gmac  begin*/
++            if (config.ipAssignment == IpAssignment.PPPOE) {
++                config.getPppoeConfiguration().saveLoginInfo(getActiveIface(iface));
+             }
+-			/*add for gmac  end*/			
++        /*add for gmac  end*/
+ 
+             // TODO: this does not check proxy settings, gateways, etc.
+             // Fix this by making IpConfiguration a complete representation of static configuration.
+-            if (!config.equals(mIpConfiguration)) {
+-                mIpConfiguration = new IpConfiguration(config);
+-                mTracker.stop();
+-                mTracker.start(mContext, mHandler);
++            if (!config.equals(mIpConfiguration.get(iface))) {
++                mIpConfiguration.put(iface, new IpConfiguration(config));
++                mTracker.get(iface).stop();
++                mTracker.get(iface).start(mContext, mHandler);
+             }
+         }
+     }
+@@ -214,9 +231,9 @@ public class EthernetServiceImpl extends IEthernetManager.Stub {
+      * Ethernet interfaces.
+      */
+     @Override
+-    public boolean isAvailable() {
++    public boolean isAvailable(String iface) {
+         enforceAccessPermission();
+-        return mTracker.isTrackingInterface();
++        return mTracker.get(iface).isTrackingInterface();
+     }
+ 
+     /**
+@@ -254,30 +271,35 @@ public class EthernetServiceImpl extends IEthernetManager.Stub {
+             return;
+         }
+ 
+-        pw.println("Current Ethernet state: ");
+-        pw.increaseIndent();
+-        mTracker.dump(fd, pw, args);
+-        pw.decreaseIndent();
+-
+-        pw.println();
+-        pw.println("Stored Ethernet configuration: ");
+-        pw.increaseIndent();
+-        pw.println(mIpConfiguration);
+-        pw.decreaseIndent();
+-
+-        pw.println("Handler:");
+-        pw.increaseIndent();
+-        mHandler.dump(new PrintWriterPrinter(pw), "EthernetServiceImpl");
+-        pw.decreaseIndent();
++        Iterator<Map.Entry<String, EthernetNetworkFactory>>
++                iterator = mTracker.entrySet().iterator();
++        while (iterator.hasNext()) {
++            Map.Entry<String, EthernetNetworkFactory> entry = iterator.next();
++            pw.println("Current Ethernet state: ");
++            pw.increaseIndent();
++            entry.getValue().dump(fd, pw, args);
++            pw.decreaseIndent();
++
++            pw.println();
++            pw.println("Stored Ethernet configuration: ");
++            pw.increaseIndent();
++            pw.println(mIpConfiguration.get(entry.getKey()));
++            pw.decreaseIndent();
++
++            pw.println("Handler:");
++            pw.increaseIndent();
++            mHandler.dump(new PrintWriterPrinter(pw), "EthernetServiceImpl");
++            pw.decreaseIndent();
++        }
+     }
+ 
+ 	/*add for gmac  begin*/
+-    public LinkProperties getLinkProperties() {
++    public LinkProperties getLinkProperties(String iface) {
+         enforceAccessPermission();
+-        return mTracker.getLinkProperties();
++        return mTracker.get(iface).getLinkProperties();
+     }
+ 
+-    public void setEthernetEnabled(boolean enable) {
++    public void setEthernetEnabled(String iface, boolean enable) {
+         Log.d(TAG, "setEthernetEnabled: Enabe=" + enable + " pid=" + Binder.getCallingPid()
+                 + ", uid=" + Binder.getCallingUid());
+ 
+@@ -287,22 +309,24 @@ public class EthernetServiceImpl extends IEthernetManager.Stub {
+             final ContentResolver cr = mContext.getContentResolver();
+             if (getEthernetState() == EthernetManager.ETHERNET_STATE_ENABLED) {
+                 if (!enable) {
+-                    mTracker.stop();
++                    mTracker.get(iface).stop();
+                     Settings.Global.putInt(cr, Settings.Global.ETHERNET_ON, enable ? 1 : 0);
+                     Intent intent = new Intent(EthernetManager.ETHERNET_STATE_CHANGED_ACTION);
+                     intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT
+                             | Intent.FLAG_RECEIVER_REPLACE_PENDING);
+-                   intent.putExtra(EthernetManager.EXTRA_ETHERNET_STATE, EthernetManager.ETHERNET_STATE_DISABLED);
+-                   mContext.sendStickyBroadcastAsUser(intent, UserHandle.ALL);
++                    intent.putExtra(EthernetManager.EXTRA_ETHERNET_STATE, EthernetManager.ETHERNET_STATE_DISABLED);
++                    intent.putExtra(EthernetManager.EXTRA_ETHERNET_INTERFACE, iface);
++                    mContext.sendStickyBroadcastAsUser(intent, UserHandle.ALL);
+                 }
+             } else {
+                 if (enable) {
+                     Settings.Global.putInt(cr, Settings.Global.ETHERNET_ON, enable ? 1 : 0);
+-                    mTracker.start(mContext, mHandler);
++                    mTracker.get(iface).start(mContext, mHandler);
+                     Intent intent = new Intent(EthernetManager.ETHERNET_STATE_CHANGED_ACTION);
+                     intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT
+                            | Intent.FLAG_RECEIVER_REPLACE_PENDING);
+                     intent.putExtra(EthernetManager.EXTRA_ETHERNET_STATE, EthernetManager.ETHERNET_STATE_ENABLED);
++                    intent.putExtra(EthernetManager.EXTRA_ETHERNET_INTERFACE, iface);
+                     mContext.sendStickyBroadcastAsUser(intent, UserHandle.ALL);
+                 }
+             }
+@@ -332,9 +356,9 @@ public class EthernetServiceImpl extends IEthernetManager.Stub {
+      * @return the DHCP information
+      * @deprecated
+      */
+-    public DhcpInfo getDhcpInfo() {
++    public DhcpInfo getDhcpInfo(String iface) {
+         enforceAccessPermission();
+-        DhcpResults dhcpResults = mTracker.getDhcpResults();
++        DhcpResults dhcpResults = mTracker.get(iface).getDhcpResults();
+ 
+         DhcpInfo info = new DhcpInfo();
+ 
+@@ -368,22 +392,22 @@ public class EthernetServiceImpl extends IEthernetManager.Stub {
+         return info;
+     }
+ 
+-    public boolean getLinkState() {
++    public boolean getLinkState(String iface) {
+         enforceAccessPermission();
+-        return mTracker.getLinkState();
++        return mTracker.get(iface).getLinkState();
+     }
+ 
+-    public String getActiveIface() {
++    public String getActiveIface(String iface) {
+         enforceAccessPermission();
+-        return mTracker.getActiveIface();
++        return mTracker.get(iface).getActiveIface();
+     }
+ 
+     /**
+      * Fetch NetworkInfo for the network
+      */
+-    public NetworkInfo getNetworkInfo() {
++    public NetworkInfo getNetworkInfo(String iface) {
+         enforceAccessPermission();
+-        return mTracker.getNetworkInfo();
++        return mTracker.get(iface).getNetworkInfo();
+     }
+ 
+     /**
+diff --git a/packages/apps/Settings/Android.mk b/packages/apps/Settings/Android.mk
+deleted file mode 100755
+index accf151..0000000
+--- a/packages/apps/Settings/Android.mk
++++ /dev/null
+@@ -1,36 +0,0 @@
+-LOCAL_PATH:= $(call my-dir)
+-include $(CLEAR_VARS)
+-
+-LOCAL_JAVA_LIBRARIES := bouncycastle conscrypt telephony-common ims-common
+-LOCAL_STATIC_JAVA_LIBRARIES := \
+-	android-support-v4 \
+-	android-support-v13 \
+-	jsr305
+-
+-LOCAL_MODULE_TAGS := optional
+-
+-LOCAL_SRC_FILES := \
+-        $(call all-java-files-under, src) \
+-        src/com/android/settings/EventLogTags.logtags
+-
+-LOCAL_RESOURCE_DIR := $(LOCAL_PATH)/res
+-LOCAL_PACKAGE_NAME := Settings
+-LOCAL_CERTIFICATE := platform
+-LOCAL_PRIVILEGED_MODULE := true
+-LOCAL_PROGUARD_FLAG_FILES := proguard.flags
+-
+-ifneq ($(INCREMENTAL_BUILDS),)
+-    LOCAL_PROGUARD_ENABLED := disabled
+-    LOCAL_JACK_ENABLED := incremental
+-endif
+-
+-include frameworks/opt/setupwizard/navigationbar/common.mk
+-include frameworks/opt/setupwizard/library/common.mk
+-include frameworks/base/packages/SettingsLib/common.mk
+-
+-include $(BUILD_PACKAGE)
+-
+-# Use the following include to make our test apk.
+-ifeq (,$(ONE_SHOT_MAKEFILE))
+-include $(call all-makefiles-under,$(LOCAL_PATH))
+-endif
+diff --git a/packages/apps/Settings/Android.org b/packages/apps/Settings/Android.org
+new file mode 100755
+index 0000000..accf151
+--- /dev/null
++++ b/packages/apps/Settings/Android.org
+@@ -0,0 +1,36 @@
++LOCAL_PATH:= $(call my-dir)
++include $(CLEAR_VARS)
++
++LOCAL_JAVA_LIBRARIES := bouncycastle conscrypt telephony-common ims-common
++LOCAL_STATIC_JAVA_LIBRARIES := \
++	android-support-v4 \
++	android-support-v13 \
++	jsr305
++
++LOCAL_MODULE_TAGS := optional
++
++LOCAL_SRC_FILES := \
++        $(call all-java-files-under, src) \
++        src/com/android/settings/EventLogTags.logtags
++
++LOCAL_RESOURCE_DIR := $(LOCAL_PATH)/res
++LOCAL_PACKAGE_NAME := Settings
++LOCAL_CERTIFICATE := platform
++LOCAL_PRIVILEGED_MODULE := true
++LOCAL_PROGUARD_FLAG_FILES := proguard.flags
++
++ifneq ($(INCREMENTAL_BUILDS),)
++    LOCAL_PROGUARD_ENABLED := disabled
++    LOCAL_JACK_ENABLED := incremental
++endif
++
++include frameworks/opt/setupwizard/navigationbar/common.mk
++include frameworks/opt/setupwizard/library/common.mk
++include frameworks/base/packages/SettingsLib/common.mk
++
++include $(BUILD_PACKAGE)
++
++# Use the following include to make our test apk.
++ifeq (,$(ONE_SHOT_MAKEFILE))
++include $(call all-makefiles-under,$(LOCAL_PATH))
++endif
+-- 
+1.9.1
+
