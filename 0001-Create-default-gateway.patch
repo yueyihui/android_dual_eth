@@ -1,0 +1,110 @@
+From 037762cee5b966aff5263af75a8e20269ab8e292 Mon Sep 17 00:00:00 2001
+From: "Yue, Liang" <liang.yue@cienet.com.cn>
+Date: Mon, 22 Jan 2018 17:13:03 +0800
+Subject: [PATCH] Create default gateway
+
+use dhcpcd results as default gateway.
+---
+ .../java/android/os/INetworkManagementService.aidl |  5 +++++
+ .../android/server/NetworkManagementService.java   | 10 ++++++++++
+ .../server/ethernet/EthernetNetworkFactory.java    |  6 ++++++
+ system/netd/server/CommandListener.cpp             | 22 ++++++++++++++++++++++
+ 4 files changed, 43 insertions(+)
+
+diff --git a/frameworks/base/core/java/android/os/INetworkManagementService.aidl b/frameworks/base/core/java/android/os/INetworkManagementService.aidl
+index cd84c8f..f177249 100644
+--- a/frameworks/base/core/java/android/os/INetworkManagementService.aidl
++++ b/frameworks/base/core/java/android/os/INetworkManagementService.aidl
+@@ -62,6 +62,11 @@ interface INetworkManagementService
+     void setInterfaceConfig(String iface, in InterfaceConfiguration cfg);
+ 
+     /**
++    * Set default gateway
++    */
++    void setDefaultGateway(String iface, String gw);
++
++    /**
+      * Clear all IP addresses on the specified interface
+      */
+     void clearInterfaceAddresses(String iface);
+diff --git a/frameworks/base/services/core/java/com/android/server/NetworkManagementService.java b/frameworks/base/services/core/java/com/android/server/NetworkManagementService.java
+index ba9279c..b4384a3 100644
+--- a/frameworks/base/services/core/java/com/android/server/NetworkManagementService.java
++++ b/frameworks/base/services/core/java/com/android/server/NetworkManagementService.java
+@@ -998,6 +998,16 @@ public class NetworkManagementService extends INetworkManagementService.Stub
+     }
+ 
+     @Override
++    public void setDefaultGateway(String iface, String gw) {
++        final Command cmd = new Command("interface", "setdgw", iface, gw);
++        try {
++            mConnector.execute(cmd);
++        } catch (NativeDaemonConnectorException e) {
++            throw e.rethrowAsParcelableException();
++        }
++    }
++
++    @Override
+     public void setInterfaceDown(String iface) {
+         mContext.enforceCallingOrSelfPermission(CONNECTIVITY_INTERNAL, TAG);
+         final InterfaceConfiguration ifcg = getInterfaceConfig(iface);
+diff --git a/frameworks/opt/net/ethernet/java/com/android/server/ethernet/EthernetNetworkFactory.java b/frameworks/opt/net/ethernet/java/com/android/server/ethernet/EthernetNetworkFactory.java
+index a83bbe5..76264ae 100644
+--- a/frameworks/opt/net/ethernet/java/com/android/server/ethernet/EthernetNetworkFactory.java
++++ b/frameworks/opt/net/ethernet/java/com/android/server/ethernet/EthernetNetworkFactory.java
+@@ -434,6 +434,12 @@ class EthernetNetworkFactory {
+                     }
+                     mDhcpResults = dhcpResults;
+                     linkProperties = dhcpResults.toLinkProperties(mIface);
++                    try {
++                        mNMService.setDefaultGateway(mIface,
++                            mDhcpResults.gateway.getHostAddress());//set gateway to iface
++                    } catch (RemoteException e) {
++
++                    }
+                 }
+                 obtainingIpWatchdogCount = 0;  
+                 if (config.getProxySettings() == ProxySettings.STATIC ||
+diff --git a/system/netd/server/CommandListener.cpp b/system/netd/server/CommandListener.cpp
+index 7ecbffc..2c746ac 100644
+--- a/system/netd/server/CommandListener.cpp
++++ b/system/netd/server/CommandListener.cpp
+@@ -81,6 +81,10 @@ unsigned stringToNetId(const char* arg) {
+ 
+ }  // namespace
+ 
++extern "C" {
++    int ifc_create_default_route(const char *name, in_addr_t gw);
++}
++
+ NetworkController *CommandListener::sNetCtrl = NULL;
+ TetherController *CommandListener::sTetherCtrl = NULL;
+ NatController *CommandListener::sNatCtrl = NULL;
+@@ -477,6 +481,24 @@ int CommandListener::InterfaceCmd::runCommand(SocketClient *cli,
+                         "Failed to set MTU", true);
+             }
+             return 0;
++        } else if(!strcmp(argv[1], "setdgw")) {//set default gateway
++            if (argc != 4) {
++                cli->sendMsg(ResponseCode::CommandSyntaxError,
++                        "Usage: interface setdgw <interface> <gw>", false);
++                return 0;
++            }
++            struct in_addr addr;
++            if (!inet_aton(argv[3], &addr)) {
++                cli->sendMsg(ResponseCode::OperationFailed, "gw inet_aton failed", true);
++                return 0;
++            }
++            //ifc_init will be called from ifc_create_default_route.
++            if (ifc_create_default_route(argv[2], addr.s_addr) == 0) {
++                cli->sendMsg(ResponseCode::CommandOkay, "default gw created", false);
++            } else {
++                cli->sendMsg(ResponseCode::OperationFailed, "create gw failed", true);
++            }
++            return 0;
+         } else {
+             cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown interface cmd", false);
+             return 0;
+-- 
+1.9.1
+

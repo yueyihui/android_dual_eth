@@ -1,0 +1,247 @@
+From f4ac15c49f76d9fa2f6554bae62e8c9961b854ea Mon Sep 17 00:00:00 2001
+From: "Yue, Liang" <liang.yue@cienet.com.cn>
+Date: Wed, 10 Jan 2018 14:55:25 +0800
+Subject: [PATCH] fix eth state broadcast
+
+1. if link remove, ip is cleared
+
+2. broadcast indecate eth connect state is reliable
+---
+ .../server/ethernet/EthernetNetworkFactory.java    | 179 ++++++++++-----------
+ 1 file changed, 81 insertions(+), 98 deletions(-)
+
+diff --git a/frameworks/opt/net/ethernet/java/com/android/server/ethernet/EthernetNetworkFactory.java b/frameworks/opt/net/ethernet/java/com/android/server/ethernet/EthernetNetworkFactory.java
+index 803811a..a83bbe5 100644
+--- a/frameworks/opt/net/ethernet/java/com/android/server/ethernet/EthernetNetworkFactory.java
++++ b/frameworks/opt/net/ethernet/java/com/android/server/ethernet/EthernetNetworkFactory.java
+@@ -144,43 +144,29 @@ class EthernetNetworkFactory {
+         };                 	
+     }
+ 
+-	private void handleEvent(Context context, Intent intent) {																	 
+-			String action = intent.getAction(); 																					 
+-			if (EthernetManager.NETWORK_STATE_CHANGED_ACTION.equals(action)) {														 
+-				final int event = intent.getIntExtra(EthernetManager.EXTRA_ETHERNET_STATE,											 
+-						EthernetManager.EVENT_ETHERNET_CONNECT_SUCCESSED);
+-				final String iface = intent.getStringExtra(EthernetManager.EXTRA_ETHERNET_INTERFACE);
+-				if (!iface.equals(mIface)) {
+-                    return;
+-                }
+-				switch(event) { 																									 																											 
+-					case EthernetManager.EVENT_ETHERNET_DISCONNECT_SUCCESSED:														 
+-					//case EthernetManager.EVENT_PPPOE_DISCONNECT_SUCCESSED:		
+-					case EthernetManager.EVENT_ETHERNET_CONNECT_FAILED:
+-						Slog.d(TAG, "handleEvent mLinkUp=" + mLinkUp);
+-						againscore=70;
+-						if(mLinkUp){
+-							synchronized(EthernetNetworkFactory.this) {						
+-							NetworkUtils.stopDhcp(mIface);
+-							updateAgent();
+-							mNetworkAgent = null;
+-							 try {
+-                                  mNMService.clearInterfaceAddresses(mIface);
+-                             } catch (Exception e) {
+-                                 Slog.e(TAG, "Failed to clear addresses or disable ipv6" + e);
+-                             }
+-                                					
+-							}
+-							onRequestNetwork();		
+-							}	
+-						break;
+-																																 
+-					default:																										 
+-						break;																										 
+-				}																													 
+-			}																													 
+-		}																															 
+-				  
++    private void handleEvent(Context context, Intent intent) {
++	    String action = intent.getAction();
++	    if (EthernetManager.NETWORK_STATE_CHANGED_ACTION.equals(action)) {
++		    final int event = intent.getIntExtra(EthernetManager.EXTRA_ETHERNET_STATE,
++				    EthernetManager.EVENT_ETHERNET_CONNECT_SUCCESSED);
++		    final String iface = intent.getStringExtra(EthernetManager.EXTRA_ETHERNET_INTERFACE);
++		    if (!iface.equals(mIface)) {
++			    return;
++		    }
++		    switch(event) {
++			    case EthernetManager.EVENT_ETHERNET_DISCONNECT_SUCCESSED:
++			  //case EthernetManager.EVENT_PPPOE_DISCONNECT_SUCCESSED:
++			    case EthernetManager.EVENT_ETHERNET_CONNECT_FAILED:
++                    /*
++                        todo onRequestNetwork by mFactory.setScoreFilter
++                    */
++				    break;
++			    default:
++				    break;
++		    }
++	    }
++    }
++
+ 
+ 
+     private class LocalNetworkFactory extends NetworkFactory {
+@@ -212,12 +198,13 @@ class EthernetNetworkFactory {
+             if (!up) {
+                 // Tell the agent we're disconnected. It will call disconnect().
+                 mNetworkInfo.setDetailedState(DetailedState.DISCONNECTED, null, mHwAddr);
+-                				/*add for eth 20160416  begin*/                          
+-                sendEthStateBroadcast(EthernetManager.EVENT_PHY_LINK_OUT);   
+-            } else {                                                         
+-                sendEthStateBroadcast(EthernetManager.EVENT_PHY_LINK_IN);    
+-				/*add for eth 20160416  end*/                            
++                /*add for eth 20160416  begin*/
++                sendEthStateBroadcast(EthernetManager.EVENT_PHY_LINK_OUT);
+ 
++                releaseEth();
++            } else {
++                sendEthStateBroadcast(EthernetManager.EVENT_PHY_LINK_IN);
++                /*add for eth 20160416  end*/
+             }
+             updateAgent();
+             // set our score lower than any network could go
+@@ -321,14 +308,14 @@ class EthernetNetworkFactory {
+             mNetworkAgent = null;
+             mNetworkInfo = new NetworkInfo(ConnectivityManager.TYPE_ETHERNET, 0, NETWORK_TYPE, "");
+             mLinkProperties = new LinkProperties();
+-            			/*add for eth 20160416  begin*/                                               
++                        /*add for eth 20160416  begin*/
+             IpConfiguration config = mEthernetManager.getConfiguration(iface);
+             if((config.getIpAssignment() == IpAssignment.PPPOE)) {                            
+                 sendNetStateBroadcast(EthernetManager.EVENT_PPPOE_DISCONNECT_SUCCESSED);      
+             } else {                                                                          
+                 sendNetStateBroadcast(EthernetManager.EVENT_ETHERNET_DISCONNECT_SUCCESSED);   
+             }                                                                                 
+-			/*add for eth 20160416  end*/                                                 
++			/*add for eth 20160416  end*/
+ 
+         }
+     }
+@@ -389,32 +376,32 @@ class EthernetNetworkFactory {
+                     }
+                     mDhcpResults = new DhcpResults(config.getStaticIpConfiguration());
+                     linkProperties = config.getStaticIpConfiguration().toLinkProperties(mIface);
+-                	/*add for eth  20160416  begin*/                                                    
+-                } else if (config.getIpAssignment() == IpAssignment.PPPOE) {                               
+-                    mNetworkInfo.setDetailedState(DetailedState.OBTAINING_IPADDR, null, mHwAddr);          
+-                                                                                                           
+-                    DhcpResults dhcpResults = new DhcpResults();                                           
+-                    PppoeConfiguration pppoeConfig = config.getPppoeConfiguration();                       
+-                    // startPppoe now                                                                      
+-                    if (pppoeConfig == null || !NetworkUtils.startPppoe(mIface,                            
+-                            pppoeConfig.username, dhcpResults)) {                                          
+-                        Slog.e(TAG, "startPppoe error:" + NetworkUtils.getPppoeError());                    
+-                        // set our score lower than any network could go                                   
+-                        // so we get dropped.                                                              
+-                        mFactory.setScoreFilter(-1);                                                       
+-                        sendNetStateBroadcast(EthernetManager.EVENT_PPPOE_CONNECT_FAILED);                 
+-                        if(obtainingIpWatchdogCount++ < 5) {                                               
+-                            mHandler.sendMessageDelayed(mHandler.obtainMessage(CMD_REQUEST_NETWORK_AGAIN), 
+-                                    OBTAINING_IP_ADDRESS_GUARD_TIMER_MSEC);                                
+-                        } else {                                                                           
+-                            mHandler.sendMessage(mHandler.obtainMessage(CMD_REQUEST_NETWORK_STOP));        
+-                        }                                                                                  
+-                        return;                                                                            
+-                    }                                                                                      
+-                    mDhcpResults = dhcpResults;                                                            
+-                    String pppIface = SystemProperties.get("net." + mIface + "-pppoe.interface");          
+-                    linkProperties = dhcpResults.toLinkProperties(pppIface);                               
+-			/*add for eth 20160416  end*/                                                      
++                    /*add for eth  20160416  begin*/
++                } else if (config.getIpAssignment() == IpAssignment.PPPOE) {
++                    mNetworkInfo.setDetailedState(DetailedState.OBTAINING_IPADDR, null, mHwAddr);
++
++                    DhcpResults dhcpResults = new DhcpResults();
++                    PppoeConfiguration pppoeConfig = config.getPppoeConfiguration();
++                    // startPppoe now
++                    if (pppoeConfig == null || !NetworkUtils.startPppoe(mIface,
++                            pppoeConfig.username, dhcpResults)) {
++                        Slog.e(TAG, "startPppoe error:" + NetworkUtils.getPppoeError());
++                        // set our score lower than any network could go
++                        // so we get dropped.
++                        mFactory.setScoreFilter(-1);
++                        sendNetStateBroadcast(EthernetManager.EVENT_PPPOE_CONNECT_FAILED);
++                        if (obtainingIpWatchdogCount++ < 8) {//retry to 8 times
++                            mHandler.sendMessageDelayed(mHandler.obtainMessage(CMD_REQUEST_NETWORK_AGAIN),
++                                    OBTAINING_IP_ADDRESS_GUARD_TIMER_MSEC);
++                        } else {
++                            mHandler.sendMessage(mHandler.obtainMessage(CMD_REQUEST_NETWORK_STOP));
++                        }
++                        return;
++                    }
++                    mDhcpResults = dhcpResults;
++                    String pppIface = SystemProperties.get("net." + mIface + "-pppoe.interface");
++                    linkProperties = dhcpResults.toLinkProperties(pppIface);
++            /*add for eth 20160416  end*/
+     
+                 } else {
+                     mNetworkInfo.setDetailedState(DetailedState.OBTAINING_IPADDR, null, mHwAddr);
+@@ -481,34 +468,9 @@ class EthernetNetworkFactory {
+                             NETWORK_TYPE, mNetworkInfo, mNetworkCapabilities, mLinkProperties,
+                             againscore) {
+                         public void unwanted() {
+-                            synchronized(EthernetNetworkFactory.this) {
+-                                if (this == mNetworkAgent) {
+-                                    NetworkUtils.stopDhcp(mIface);
+-				                    NetworkUtils.stopPppoe(mIface); 
+-                                    mLinkProperties.clear();
+-                                    mDhcpResults.clear(); 
+-                                    mNetworkInfo.setDetailedState(DetailedState.DISCONNECTED, null,
+-                                            mHwAddr);
+-                                    			/*add for eth  20160416  begin*/                                                          
+-                                    IpConfiguration config = mEthernetManager.getConfiguration(mIface);
+-                                    if((config.getIpAssignment() == IpAssignment.PPPOE)) {                                       
+-                                        sendNetStateBroadcast(EthernetManager.EVENT_PPPOE_DISCONNECT_SUCCESSED);                 
+-                                    } else {                                                                                     
+-                                        sendNetStateBroadcast(EthernetManager.EVENT_ETHERNET_DISCONNECT_SUCCESSED);              
+-                                    }                                                                                            
+-							/*add for eth 20160416  end*/                                                            
+-        
+-                                    updateAgent();
+-                                    mNetworkAgent = null;
+-                                    try {
+-                                        mNMService.clearInterfaceAddresses(mIface);
+-                                    } catch (Exception e) {
+-                                        Slog.e(TAG, "Failed to clear addresses or disable ipv6" + e);
+-                                    }
+-                                } else {
+-                                    Slog.d(TAG, "Ignoring unwanted as we have a more modern " +
+-                                            "instance");
+-                                }
++                            //can't invoke, because of there is no asyncChannel
++                            if (mNetworkAgent == this) {
++                                releaseEth();
+                             }
+                         };
+                     };
+@@ -518,6 +480,27 @@ class EthernetNetworkFactory {
+         dhcpThread.start();
+     }
+ 
++    private void releaseEth() {
++	    NetworkUtils.stopDhcp(mIface);
++	    NetworkUtils.stopPppoe(mIface);
++	    mLinkProperties.clear();
++	    mDhcpResults.clear();
++	    mNetworkInfo.setDetailedState(DetailedState.DISCONNECTED, null, mHwAddr);
++	    IpConfiguration config = mEthernetManager.getConfiguration(mIface);
++	    if((config.getIpAssignment() == IpAssignment.PPPOE)) {
++		    sendNetStateBroadcast(EthernetManager.EVENT_PPPOE_DISCONNECT_SUCCESSED);
++	    } else {
++		    sendNetStateBroadcast(EthernetManager.EVENT_ETHERNET_DISCONNECT_SUCCESSED);
++	    }
++	    updateAgent();
++	    mNetworkAgent = null;
++	    try {
++		    mNMService.clearInterfaceAddresses(mIface);
++	    } catch (Exception e) {
++		    Slog.e(TAG, "Failed to clear addresses or disable ipv6" + e);
++	    }
++    }
++
+     /**
+      * Begin monitoring connectivity
+      */
+-- 
+1.9.1
+

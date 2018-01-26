@@ -1,0 +1,59 @@
+From 3944d71a31d82d4a7406a95f1f3bc88622cf9772 Mon Sep 17 00:00:00 2001
+From: "Yue, Liang" <liang.yue@cienet.com.cn>
+Date: Wed, 17 Jan 2018 11:22:45 +0800
+Subject: [PATCH] fix bug: eth static ip cfg isn't load after boot
+
+---
+ .../server/ethernet/EthernetConfigStore.java       | 22 ----------------------
+ .../server/ethernet/EthernetServiceImpl.java       |  2 +-
+ 2 files changed, 1 insertion(+), 23 deletions(-)
+
+diff --git a/frameworks/opt/net/ethernet/java/com/android/server/ethernet/EthernetConfigStore.java b/frameworks/opt/net/ethernet/java/com/android/server/ethernet/EthernetConfigStore.java
+index 28b2dc3..adb0eac 100755
+--- a/frameworks/opt/net/ethernet/java/com/android/server/ethernet/EthernetConfigStore.java
++++ b/frameworks/opt/net/ethernet/java/com/android/server/ethernet/EthernetConfigStore.java
+@@ -45,28 +45,6 @@ public class EthernetConfigStore extends IpConfigStore {
+     public EthernetConfigStore() {
+     }
+ 
+-    public IpConfiguration readIpAndProxyConfigurations() {
+-        SparseArray<IpConfiguration> networks = readIpAndProxyConfigurations(ipConfigFile);
+-
+-        if (networks.size() == 0) {
+-            Log.w(TAG, "No Ethernet configuration found. Using default.");
+-            //return new IpConfiguration(IpAssignment.DHCP, ProxySettings.NONE, null, null); //xiehb
+-            LinkAddress linkAddress = new LinkAddress("192.168.2.100/24");
+-            StaticIpConfiguration staticIpConfiguration = new StaticIpConfiguration();
+-            staticIpConfiguration.ipAddress = linkAddress;
+-            return new IpConfiguration(IpAssignment.STATIC
+-                , ProxySettings.NONE
+-                , staticIpConfiguration
+-                , null);
+-        }
+-
+-        if (networks.size() > 1) {
+-            // Currently we only support a single Ethernet interface.
+-            Log.w(TAG, "Multiple Ethernet configurations detected. Only reading first one.");
+-        }
+-        return networks.valueAt(0);
+-    }
+-
+     public void writeIpAndProxyConfigurations(IpConfiguration config) {
+         SparseArray<IpConfiguration> networks = new SparseArray<IpConfiguration>();
+         networks.put(0, config);
+diff --git a/frameworks/opt/net/ethernet/java/com/android/server/ethernet/EthernetServiceImpl.java b/frameworks/opt/net/ethernet/java/com/android/server/ethernet/EthernetServiceImpl.java
+index e75796e..3333f58 100755
+--- a/frameworks/opt/net/ethernet/java/com/android/server/ethernet/EthernetServiceImpl.java
++++ b/frameworks/opt/net/ethernet/java/com/android/server/ethernet/EthernetServiceImpl.java
+@@ -95,7 +95,7 @@ public class EthernetServiceImpl extends IEthernetManager.Stub {
+         mIpConfiguration.put(ETH0, mEthernetConfigStore.
+                 readIpAndProxyConfigurations(IpAssignment.DHCP));
+         mIpConfiguration.put(ETH1, mEthernetConfigStore.
+-                readIpAndProxyConfigurations());
++                readIpAndProxyConfigurations(IpAssignment.STATIC));
+ 
+         Iterator<Map.Entry<String, IpConfiguration>> iterator = mIpConfiguration.entrySet().iterator();
+         while (iterator.hasNext()) {
+-- 
+1.9.1
+
