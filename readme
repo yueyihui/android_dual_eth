@@ -1,4 +1,4 @@
 mFactory.setScoreFilter(-1); will invoke NetworkFactory.startNetwork
 
-0001-fix-eth-state-broadcast.patch is removed onRequestNetwork() logical after recevied
-EthernetManager.EVENT_ETHERNET_CONNECT_FAILED to avoid conflict with mFactory.setScoreFilter(-1)
+0001-fix-eth-state-broadcast.patch is removed onRequestNetwork() logical after recevied EthernetManager.EVENT_ETHERNET_CONNECT_FAILED 
+to avoid conflict with mFactory.setScoreFilter(-1), because setScoreFilter is well done for reconnect.

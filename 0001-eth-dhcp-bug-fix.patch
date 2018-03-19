@@ -1,0 +1,67 @@
+From 1eb1305832cc6ff3fd91063e882888eeb4f22991 Mon Sep 17 00:00:00 2001
+From: "Yue, Liang" <liang.yue@cienet.com.cn>
+Date: Thu, 3 Aug 2017 13:53:28 +0800
+Subject: [PATCH] eth dhcp bug fix
+
+disable dhpc_eth0 in init.common.rc lead up
+fg Thread blocking, because of eth still dhpc.
+
+Result:
+change default behavior of eth to static.
+---
+ device/softwinner/common/init.common.rc                      |  8 ++++----
+ .../com/android/server/ethernet/EthernetConfigStore.java     | 12 ++++++++++--
+ 2 files changed, 14 insertions(+), 6 deletions(-)
+
+diff --git a/device/softwinner/common/init.common.rc b/device/softwinner/common/init.common.rc
+index fd13d32..e9205cc 100755
+--- a/device/softwinner/common/init.common.rc
++++ b/device/softwinner/common/init.common.rc
+@@ -90,10 +90,10 @@ service dhcpcd_wlan0 /system/bin/dhcpcd -aABDKL
+     disabled
+     oneshot
+ # xiehb modify -aABDKL to -aABKL at 20170505
+-#service dhcpcd_eth0 /system/bin/dhcpcd -aABKL
+-#    class main
+-#    disabled
+-#    oneshot
++service dhcpcd_eth0 /system/bin/dhcpcd -aABKL
++    class main
++    disabled
++    oneshot
+ 
+ service dhcpcd_p2p /system/bin/dhcpcd -aABKL
+     class main
+diff --git a/frameworks/opt/net/ethernet/java/com/android/server/ethernet/EthernetConfigStore.java b/frameworks/opt/net/ethernet/java/com/android/server/ethernet/EthernetConfigStore.java
+index 05400f7..a6d1ea5 100755
+--- a/frameworks/opt/net/ethernet/java/com/android/server/ethernet/EthernetConfigStore.java
++++ b/frameworks/opt/net/ethernet/java/com/android/server/ethernet/EthernetConfigStore.java
+@@ -19,6 +19,8 @@ package com.android.server.ethernet;
+ import android.net.IpConfiguration;
+ import android.net.IpConfiguration.IpAssignment;
+ import android.net.IpConfiguration.ProxySettings;
++import android.net.LinkAddress;
++import android.net.StaticIpConfiguration;
+ import android.os.Environment;
+ import android.util.Log;
+ import android.util.SparseArray;
+@@ -48,8 +50,14 @@ public class EthernetConfigStore extends IpConfigStore {
+ 
+         if (networks.size() == 0) {
+             Log.w(TAG, "No Ethernet configuration found. Using default.");
+-            return new IpConfiguration(IpAssignment.DHCP, ProxySettings.NONE, null, null); //xiehb
+-            //return new IpConfiguration(IpAssignment.STATIC, ProxySettings.NONE, null, null);
++            //return new IpConfiguration(IpAssignment.DHCP, ProxySettings.NONE, null, null); //xiehb
++            LinkAddress linkAddress = new LinkAddress("127.0.0.1/24");
++            StaticIpConfiguration staticIpConfiguration = new StaticIpConfiguration();
++            staticIpConfiguration.ipAddress = linkAddress;
++            return new IpConfiguration(IpAssignment.STATIC
++                , ProxySettings.NONE
++                , staticIpConfiguration
++                , null);
+         }
+ 
+         if (networks.size() > 1) {
+-- 
+1.9.1
+
